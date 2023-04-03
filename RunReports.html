@@ -1,0 +1,459 @@
+﻿<script
+  src="https://code.jquery.com/jquery-3.6.3.min.js"
+  integrity="sha256-pvPw+upLPUjgMXY0G+8O0xUf+/Im1MZjXxxgOcBQBXU="
+  crossorigin="anonymous"></script>
+<script
+  src="https://code.jquery.com/ui/1.13.2/jquery-ui.min.js"
+  integrity="sha256-lSjKY0/srUM9BE3dPm+c4fBo1dky2v27Gdjm2uoZaL0="
+  crossorigin="anonymous"></script>
+<script 
+	type="text/javascript" 
+	src="https://unpkg.com/tabulator-tables/dist/js/tabulator.min.js">
+</script>
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>Testrail project runs report</title>
+	<link rel="stylesheet" href="https://unpkg.com/tabulator-tables/dist/css/tabulator_site.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.3.0/css/all.min.css">
+    <style>
+        h1 {
+            text-align: center;
+        }
+
+        h2 {
+            text-align: center;
+        }
+
+        div[tabulator-field=FailedFirstTimeTests] {
+            font-weight: bold;
+            background-color: #CCBFAB;
+            text-align: center;
+        }
+
+        div[tabulator-field=FailEveryDayTests] {
+            font-weight: bold;
+            background-color: #CCBFAB;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <h1>'***projectNamePlaceholder***' run reports</h1>
+    <div id="runs-table"></div>
+    <h2> Common errors from selected run</h2>
+    <div id="commonErrors-table"></div>
+    <h2> Unique failed tests from selected run</h2>
+    <div id="uniqueTests-table"></div>
+	<h2> All failed tests from selected run</h2>
+	<div id="allTests-table"></div>
+</body>
+</html>
+
+<script>
+	// Extra functions.
+	function hideIcon(){
+		return "<i class='fa fa-eye-slash'></i>";
+	};
+
+	String.prototype.hashCode = function() {
+		var hash = 0,
+			i, chr;
+		if (this.length === 0) return hash;
+		for (i = 0; i < this.length; i++) {
+			chr = this.charCodeAt(i);
+			hash = ((hash << 5) - hash) + chr;
+			hash |= 0; // Convert to 32bit integer
+		}
+		return hash;
+	};
+
+    function headerMenu() {
+        const menu = [];
+        const columns = this.getColumns();
+
+        for (let column of columns) {
+
+            //create checkbox element using font awesome icons
+            let icon = document.createElement("i");
+            icon.classList.add("fas");
+            icon.classList.add(column.isVisible() ? "fa-check-square" : "fa-square");
+
+            //build label
+            let label = document.createElement("span");
+            let title = document.createElement("span");
+
+            title.textContent = " " + column.getDefinition().title;
+
+            label.appendChild(icon);
+            label.appendChild(title);
+
+            //create menu item
+            menu.push({
+                label: label,
+                action: function (e) {
+                    //prevent menu closing
+                    e.stopPropagation();
+
+                    //toggle current column visibility
+                    column.toggle();
+
+                    //change menu item icon
+                    if (column.isVisible()) {
+                        icon.classList.remove("fa-square");
+                        icon.classList.add("fa-check-square");
+                    } else {
+                        icon.classList.remove("fa-check-square");
+                        icon.classList.add("fa-square");
+                    }
+                }
+            });
+        }
+
+        return menu;
+    };
+
+    function toggleUnselectedRows(table)
+    {
+	    const rowElements = table.getRows().filter(row => !row.isSelected()).map(function(row) { return row.getElement(); });
+	    rowElements.forEach(row => toggleElement(row));
+	    document.querySelector(`#${table.element.id} .tabulator-tableholder`).style.height = "1px";
+    };
+
+    function toggleAllRows(table) {
+	    const rowElements = table.getRows().map(row => row.getElement());
+	    rowElements.forEach(row => toggleElement(row));
+	    document.querySelector(`#${table.element.id} .tabulator-tableholder`).style.height = "1px";
+    };
+
+    function toggleElement(el) {
+	    if (el.style.display === "none") {
+		    el.style.display = "block";
+	    } else {
+		    el.style.display = "none";
+	    }
+    }
+</script>
+
+<script>
+	var runsReport = ***dataPlaceHolder***;
+	var trServer = "***trServerPlaceholder***";
+
+	var commonErrors = runsReport[0].CommonErrors;
+	var uniqueTests = runsReport[0].UniqueErrorTests;
+	var allTests = runsReport[0].CommonErrors.flatMap(c => c.FailedTestsInfo).concat(uniqueTests);
+
+	var runsTable = new Tabulator("#runs-table", {
+		maxHeight: "80%",
+		layout: "fitDataStretch",
+		resizableColumns: true,
+		data: runsReport,
+		selectable: 1,
+		columns: [
+			{
+				headerHozAlign: "center", title: "Hide Sub", width: 30, headerSort: false,
+				headerTooltip: "Show/hide unselected rows.",
+				titleFormatter: hideIcon,
+				headerClick: function(e, column){toggleUnselectedRows(column.getTable())}
+			},
+			{ title: "Run Name", field: "RunName" },
+			{ title: "Date", field: "Date", headerTooltip: "Date when run finished." },
+			{
+				title: "Passed tests", headerHozAlign: "center", headerTooltip: "How many tests passed successfully in the run.",
+				columns:
+				[
+					{
+						title: "Total", field: "PassedTests",
+						headerTooltip: "How many tests passed totally."
+					},
+					{
+						title: "Retested", field: "PassedOnRetest",
+						headerTooltip: "How many tests passed after running the Rerun pipeline."
+					}
+				]
+			},
+			{
+				title: "Failed tests", headerHozAlign: "center", 
+				columns:
+				[
+					{ title: "Total", field: "FailedTests", headerTooltip: "How many tests failed totally in the run." },
+					{
+						title: "First time", field: "FailedFirstTimeTests",
+						headerTooltip: "How many tests failed for the first time in the run due to a particular error." +
+							"If a test fails for the first time with an error that haven't appeared on the test before, the test is counted in this column."
+					},
+					{
+						title: "Every day", field: "FailEveryDayTests",
+						headerTooltip: "How many tests failed 2 times or more in a row due to a particular error." +
+							"If a test fails 2 times or more with the same error in a row, the test is counted in this column."
+					},
+					{
+						title: "With common errors", field: "FailedWithCommonErrorsTests",
+						headerTooltip: "How many tests failed due to common errors." +
+							"Common error - error that affected 2 and more tests in the run."
+					},
+					{
+						title: "With unique errors", field: "FailedWithUniqueErrorsTests",
+						headerTooltip: "How many tests failed due to unique errors." +
+							"Unique error - error that affected only one test."
+					}
+				]
+			},
+			{ title: "Common errors count", field: "CommonErrorsCount", headerTooltip: "How many common errors we have in the run." },
+			{ title: "AQA bugs", field: "BugTests", headerTooltip: "How many tests failed due to known bugs." },
+			{ title: "Flaky", field: "FlakyTests", headerTooltip: "How many flaky tests we have in the run." },
+			{ title: "Placeholder", headerTooltip: "Placeholder" }
+		]
+	});
+
+	var commonErrorsTable = new Tabulator("#commonErrors-table", {
+		maxHeight: "80%",
+		layout: "fitDataStretch",
+		data: commonErrors,
+		columns: [
+			{
+				titleFormatter: hideIcon,
+				formatter: hideIcon, headerHozAlign: "center", title: "Hide Sub", width: 30, headerSort: false,
+				cellClick: function (e, row, formatterParams) { const id = row.getData().ErrorMessage.hashCode(); $(`.cetTable_${id}`).toggle(); },
+				headerClick: function(e, column){toggleAllRows(column.getTable())},
+				headerTooltip: "Show/hide all rows in the table.",
+				tooltip: "Show/hide sub table with detailed information about failed tests."
+			},
+			{
+				title: "Common error", field: "ErrorMessage", formatter: "textarea", width: 600,
+				headerTooltip: "Common error - error that affected 2 and more tests in the run."
+			},
+			{
+				title: "Failed", headerHozAlign: "center",
+				columns:
+				[
+					{
+						title: "Total", field: "FailedTests",
+						headerTooltip: "How many tests failed because the error."
+					},
+					{
+						title: "First time", field: "FailedFirstTimeTests",
+						headerTooltip: "How many tests failed for the first time because the error in the run."
+					},
+					{
+						title: "Every day", field: "FailEveryDayTests",
+						headerTooltip: "How many tests failed because the error 2 and more times in a row, including the run."
+					},
+					{
+						title: "Flaky", field: "FlakyTests",
+						headerTooltip: "How many flaky tests failed because the error in the run."
+					}
+				]
+			},
+			{ title: "Placeholder", headerTooltip: "Placeholder" }
+		],
+
+		rowFormatter: function (row) {
+			//create and style holder elements
+			const holderCet = document.createElement("div");
+			const tableCet = document.createElement("div");
+			const id = row.getData().ErrorMessage.hashCode();
+
+			holderCet.style.boxSizing = "border-box";
+			holderCet.style.padding = "10px 10px 10px 10px";
+			holderCet.style.borderTop = "1px solid #333";
+			holderCet.style.borderBotom = "1px solid #333";
+			holderCet.style.background = "#ddd";
+			holderCet.setAttribute('class', `cetTable_${id}`);
+
+			tableCet.style.border = "1px solid #333";
+			tableCet.setAttribute('class', `cetTable_${id}`);
+
+			holderCet.appendChild(tableCet);
+
+			row.getElement().appendChild(holderCet);
+
+			const commonErrorTestsTable = new Tabulator(tableCet, {
+				maxHeight: "100%",
+				layout: "fitDataStretch",
+				data: row.getData().FailedTestsInfo,
+				columns: [
+					{
+						title: "Test name", field: "Title", formatter: "textarea", width: 400,
+						headerTooltip: "Test name", headerMenu: headerMenu
+					},
+					{
+						title: "Section/Job", field: "Section",
+						headerTooltip: "Section/Job", headerMenu: headerMenu
+					},
+					{
+						title: "Team", field: "Team",
+						headerTooltip: "Team", headerMenu: headerMenu
+					},
+					{
+						title: "Fail Status", field: "FailStatus",
+						headerTooltip: "Fail Status", headerMenu: headerMenu
+					},
+					{
+						title: "Fails Since", field: "FailsSince",
+						headerTooltip: "Fails Since", headerMenu: headerMenu
+					},
+					{
+						title: "Fail Rate", field: "FailRate",
+						headerTooltip: "Fail Rate", headerMenu: headerMenu
+					},
+					{
+						title: "History", field: "History",
+						headerTooltip: "'-'-passed test, '_' - failed, '‗' - failed with current error.", headerMenu: headerMenu
+					},
+					{
+						title: "Link", field: "TestrailLink", formatter: "link",
+						formatterParams:
+						{
+							label: "Click",
+							labelField: "TestrailLink",
+							target: "_blank",
+							url: function (cell) { var urlId = cell.getValue(); return `${trServer}/index.php?/tests/view/${urlId}`; }
+						},
+						headerTooltip: "Link to the test in Testrail", headerMenu: headerMenu
+					},
+					{
+						title: "Error", field: "Exception", formatter: "textarea",
+						headerTooltip: "Error - exception.", headerMenu: headerMenu
+					}
+				]
+			});
+
+			$(`.cetTable_${id}`).hide();
+		}
+	});
+
+	var uniqueErrorTestsTable = new Tabulator("#uniqueTests-table", {
+		maxHeight: "80%",
+		layout: "fitDataStretch",
+		data: uniqueTests,
+		columns: [
+			{
+				titleFormatter: hideIcon,
+				headerHozAlign: "center", title: "Hide Sub", width: 30, headerSort: false,
+				headerClick: function(e, column){toggleAllRows(column.getTable())},
+				headerTooltip: "Show/hide all rows in the table.",
+				formatter:"rownum"
+			},
+			{
+				title: "Test name", field: "Title", formatter: "textarea", width: 400,
+				headerTooltip: "Test name", headerMenu: headerMenu
+			},
+			{
+				title: "Section/Job", field: "Section",
+				headerTooltip: "Section/Job", headerMenu: headerMenu
+			},
+			{
+				title: "Team", field: "Team",
+				headerTooltip: "Team", headerMenu: headerMenu
+			},
+			{
+				title: "Fail Status", field: "FailStatus",
+				headerTooltip: "Fail Status", headerMenu: headerMenu
+			},
+			{
+				title: "Fails Since", field: "FailsSince",
+				headerTooltip: "Fails Since", headerMenu: headerMenu
+			},
+			{
+				title: "Fail Rate", field: "FailRate",
+				headerTooltip: "Fail Rate", headerMenu: headerMenu
+			},
+			{
+				title: "History", field: "History",
+				headerTooltip: "'-'-passed test, '_' - failed, '‗' - failed with current error.", headerMenu: headerMenu
+			},
+			{
+				title: "Link", field: "TestrailLink", formatter: "link",
+				formatterParams:
+				{
+					label: "Click",
+					labelField: "TestrailLink",
+					target: "_blank",
+					url: function (cell) { var urlId = cell.getValue(); return `${trServer}/index.php?/tests/view/${urlId}`; }
+				},
+				headerTooltip: "Link to the test in Testrail", headerMenu: headerMenu
+			},
+			{
+				title: "Error", field: "Exception", formatter: "textarea",
+				headerTooltip: "Error - exception.", headerMenu: headerMenu
+			}
+		]
+	});
+
+	var allTestsTable = new Tabulator("#allTests-table", {
+		maxHeight: "80%",
+		layout: "fitDataStretch",
+		data: uniqueTests,
+		columns: [
+			{
+				titleFormatter: hideIcon,
+				headerHozAlign: "center", title: "Hide Sub", width: 30, headerSort: false,
+				headerClick: function(e, column){toggleAllRows(column.getTable())},
+				headerTooltip: "Show/hide all rows in the table.",
+				formatter:"rownum"
+			},
+			{
+				title: "Test name", field: "Title", formatter: "textarea", width: 400,
+				headerTooltip: "Test name", headerMenu: headerMenu
+			},
+			{
+				title: "Section/Job", field: "Section",
+				headerTooltip: "Section/Job", headerMenu: headerMenu
+			},
+			{
+				title: "Team", field: "Team",
+				headerTooltip: "Team", headerMenu: headerMenu
+			},
+			{
+				title: "Fail Status", field: "FailStatus",
+				headerTooltip: "Fail Status", headerMenu: headerMenu
+			},
+			{
+				title: "Fails Since", field: "FailsSince",
+				headerTooltip: "Fails Since", headerMenu: headerMenu
+			},
+			{
+				title: "Fail Rate", field: "FailRate",
+				headerTooltip: "Fail Rate", headerMenu: headerMenu
+			},
+			{
+				title: "History", field: "History",
+				headerTooltip: "'-'-passed test, '_' - failed, '‗' - failed with current error.", headerMenu: headerMenu
+			},
+			{
+				title: "Link", field: "TestrailLink", formatter: "link",
+				formatterParams:
+				{
+					label: "Click",
+					labelField: "TestrailLink",
+					target: "_blank",
+					url: function (cell) { var urlId = cell.getValue(); return `${trServer}/index.php?/tests/view/${urlId}`; }
+				},
+				headerTooltip: "Link to the test in Testrail", headerMenu: headerMenu
+			},
+			{
+				title: "Error", field: "Exception", formatter: "textarea",
+				headerTooltip: "Error - exception.", headerMenu: headerMenu
+			}
+		]
+	});
+
+	runsTable.on("rowSelectionChanged", function (data, rows) {
+		if (data.length === 0) { return; }
+
+		commonErrors = data[0].CommonErrors;
+		uniqueTests = data[0].UniqueErrorTests;
+		allTests = data[0].CommonErrors.flatMap(c => c.FailedTestsInfo).concat(uniqueTests);
+
+		commonErrorsTable.replaceData(commonErrors);
+		uniqueErrorTestsTable.replaceData(uniqueTests);
+		allTestsTable.replaceData(allTests);
+	});
+
+	$(document).ready(function () {
+		runsTable.getRows()[0].toggleSelect();
+		toggleUnselectedRows(runsTable.getColumns()[0].getTable());
+	});
+</script>
